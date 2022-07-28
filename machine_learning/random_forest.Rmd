@@ -1,0 +1,154 @@
+---
+title: "Machine Learning using random forest"
+author: "Muhammed Hashi"
+date: '2022-07-28'
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+## Random Forest Algorithms.
+## Random Forest Algorirthms for regression.
+```{r}
+library(tidyverse)
+library(tidymodels)
+library(broom)
+library(scales)
+library(infer)
+library(textrecipes)
+
+ikea_df <- read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-11-03/ikea.csv')
+
+ikea_df %>% 
+  glimpse()
+
+ikea_df <- ikea_df %>% 
+  rename(x1 = "...1")
+names(ikea_df)
+```
+
+```{r}
+ikea_df %>% 
+  select(x1, price, depth:width) %>% 
+  pivot_longer(depth:width, names_to = 'dim') %>% 
+  ggplot(aes(value, price, col=dim)) +  geom_jitter(alpha=0.5, show.legend = FALSE) + 
+  scale_y_log10() + facet_wrap( ~ dim, scales = "free_x") +
+  labs(x = "") + theme_minimal()
+```
+```{r}
+ikea_df %>% 
+  count(name, sort = TRUE)
+
+ikea_tidy <- ikea_df %>% 
+  select(price, name, category, height, width, depth) %>% 
+  mutate(price = log10(price)) %>% 
+  mutate_if(is.character, as.factor)
+```
+
+## build model
+
+```{r}
+set.seed(234)
+ikea_split <- initial_split(ikea_tidy, strata = price)
+
+ikea_train <- training(ikea_split)
+ikea_test <- testing(ikea_split)
+
+ikea_folds <- vfold_cv(ikea_train, strata = price)
+
+ikea_bootsrap <- bootstraps(ikea_train, strata = price)
+
+ikea_bootsrap
+ikea_folds
+
+```
+
+```{r}
+library(usemodels)
+library(tidymodels)
+library(janitor)
+library(ranger)
+
+use_ranger(price ~ ., data = ikea_train)
+
+ranger_recipe <- recipe(formula = price ~ ., data = ikea_train) %>% 
+  step_other(name, category, threshold = 0.01) %>% 
+  step_clean_levels(name, category) %>% 
+  step_impute_knn(depth, height, width)
+
+ranger_spec <- 
+  rand_forest(mtry = tune(), min_n = tune(), trees = 1000) %>% 
+  set_mode("regression") %>% 
+  set_engine("ranger") 
+
+ranger_workflow <- 
+  workflow() %>% 
+  add_recipe(ranger_recipe) %>% 
+  add_model(ranger_spec) 
+
+set.seed(76564)
+
+ranger_tune <-
+  tune_grid(ranger_workflow, resamples = ikea_bootsrap, 
+            grid = 5)
+
+ 
+
+```
+
+## Explore the results of the model.
+
+```{r}
+show_best(ranger_tune, metric = 'rmse')
+show_best(ranger_tune, metric = 'rsq')
+```
+
+```{r}
+autoplot(ranger_tune) + theme_minimal()
+
+final_rf <- ranger_workflow %>% 
+  finalize_workflow(select_best(ranger_tune))
+```
+
+```{r}
+ikea_fit <- last_fit(final_rf, ikea_split)
+
+ikea_fit
+
+```
+
+```{r}
+collect_metrics(ikea_fit)
+```
+
+```{r}
+collect_predictions(ikea_fit) %>% 
+  ggplot(aes(price, .pred)) + 
+  geom_point(col='midnightblue', alpha=0.5) +
+  geom_abline(lty=2, col='grey50') + theme_minimal() +
+  coord_fixed()
+
+```
+
+
+```{r}
+predict(ikea_fit$.workflow[[1]], ikea_test[15,])
+```
+
+```{r}
+library(vip)
+
+imp_spec <- ranger_spec %>% 
+  finalize_model(select_best(ranger_tune)) %>% 
+  set_engine('ranger', importance = "permutation")
+
+workflow() %>% 
+  add_model(imp_spec) %>% 
+  add_recipe(ranger_recipe) %>% 
+  fit(ikea_train) %>% 
+  pull_workflow_fit() %>% 
+  vip(aesthetics =list(alpha = 0.8, fill='midnightblue')) +
+  theme_minimal()
+```
+
+
