@@ -1,0 +1,21 @@
+---
+title: "Testing for pushing to github"
+author: "Muhammed Hashi"
+date: '2022-07-28'
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+## Hashi Test
+
+```{r}
+library(tidyverse)
+
+mtcars %>% 
+  ggplot(aes(disp, wt)) + 
+  geom_point(col='midnightblue') + theme_minimal() +
+  geom_abline(intercept = 2, slope = 1.5)
+
+```
+
