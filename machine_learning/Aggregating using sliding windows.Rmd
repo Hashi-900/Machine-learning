@@ -1,0 +1,99 @@
+---
+title: "Model deployment"
+author: "Muhammed Hashi"
+date: '2022-08-04'
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+# Model deployment and monitoring
+```{r}
+library(tidymodels)
+library(tidyverse)
+library(lubridate)
+library(slider)
+library(scales)
+
+rent_df <-read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2022/2022-07-05/rent.csv')
+```
+
+```{r}
+rent_df %>% 
+  glimpse()
+
+rent_df
+
+rent_df %>% 
+  count(year)
+
+rent_df %>% 
+  slice_sample(n=20) %>% 
+  pull(date)
+```
+
+## lets aggregate the data
+
+```{r}
+rent <- rent_df %>% 
+  filter(room_in_apt < 1, year > 2005) %>% 
+  select(date, price, beds, baths) %>% 
+  mutate(date = ymd(date)) %>% 
+    arrange(date)
+```
+
+```{r}
+slide_period_dbl(rent, rent$date, "month",  ~ mean(.x$price))
+```
+
+
+
+```{r}
+mean_rent <- function(df){
+  summarise(df, date= min(date), rent = mean(price),  n= n())
+}
+
+slide_period_dfr(rent, rent$date, "month",  mean_rent) %>% 
+  ggplot(aes(date, rent)) + 
+  geom_line(size=1.5, alpha=0.8, col='midnightblue') + theme_minimal()
+
+```
+
+
+
+
+```{r}
+slide_period_dfr(rent, rent$date, "month",  mean_rent, .before = 4) %>% 
+  ggplot(aes(date, rent)) + 
+  geom_line(size=1.5, alpha=0.8, col='midnightblue') + theme_minimal()
+```
+
+```{r}
+tibble(.before =1:6) %>% 
+  mutate(
+    mean_rent = map(
+      .before, 
+      ~slide_period_dfr(rent, rent$date, "month",  mean_rent, .before = .x)
+    )
+  ) %>% 
+  unnest(mean_rent) %>% 
+  ggplot(aes(date, rent, col=.before, group=.before)) + 
+  geom_line(size=1.5, alpha=0.8) + theme_minimal() +
+  scale_color_viridis_b() +
+  scale_y_continuous(labels = dollar) +
+  labs(x= " ", color="Month in \n sliding window")
+  
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
